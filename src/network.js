@@ -60,16 +60,29 @@ export class Network extends EventEmitter {
     return Math.floor(1000 + Math.random() * 9000).toString();
   }
 
+  cleanupRoom() {
+    if (this.roomUnsubscribes) {
+      this.roomUnsubscribes.forEach(unsub => unsub());
+      this.roomUnsubscribes = [];
+    }
+    // Remove self from DB if we were in a room
+    if (this.roomCode && this.id) {
+       remove(ref(db, `rooms/${this.roomCode}/players/${this.id}`));
+    }
+    this.roomCode = null;
+    this.hasOpponent = false;
+  }
+
   createRoom() {
+    this.cleanupRoom(); // Clean previous session
     if (!this.id) return;
     const code = this.generateCode();
     const roomRef = ref(db, `rooms/${code}`);
     
     get(roomRef).then((snapshot) => {
       if (snapshot.exists()) {
-        this.createRoom(); // Retry if collision
+        this.createRoom(); // Retry
       } else {
-        // Create Room
         const roomData = {
           players: {
             [this.id]: { status: 'host' }
@@ -89,6 +102,7 @@ export class Network extends EventEmitter {
   }
 
   joinRoom(code) {
+    this.cleanupRoom(); // Clean previous session
     if (!this.id) return;
     
     const roomRef = ref(db, `rooms/${code}`);
@@ -103,7 +117,6 @@ export class Network extends EventEmitter {
           return;
         }
 
-        // Add self
         const updates = {};
         updates[`rooms/${code}/players/${this.id}`] = { status: 'joined' };
         
@@ -113,9 +126,7 @@ export class Network extends EventEmitter {
           this.setupRoomListeners(code);
           this.setupDisconnectHandler(code);
           
-          // Trigger game start for everyone if we are the second player
-          // Wait, logic in socket.io was: server checks count -> emits player_joined -> then game_start
-          // We can just set 'gameStarted' to true here
+          // Trigger game start
           set(ref(db, `rooms/${code}/gameStarted`), true);
         });
 
@@ -126,19 +137,40 @@ export class Network extends EventEmitter {
   }
 
   setupRoomListeners(code) {
-    // Listen for players joining/leaving
+    this.hasOpponent = false;
     const playersRef = ref(db, `rooms/${code}/players`);
+    
+    // 1. Monitor Players (Join/Leave/State)
     const unsubPlayers = onValue(playersRef, (snapshot) => {
       const players = snapshot.val() || {};
       const count = Object.keys(players).length;
       
-      // Check if opponent joined
-      if (count === 2) {
+      // Check for Opponent State 
+      // (Combined loop to handle state updates + presence)
+      let opponentFound = false;
+      Object.keys(players).forEach(pid => {
+        if (pid !== this.id) {
+          opponentFound = true;
+          if (players[pid].state) {
+            this.emit('opponent_state', players[pid].state);
+          }
+        }
+      });
+
+      // Status Logic
+      if (count === 2 && !this.hasOpponent) {
+         this.hasOpponent = true;
          this.emit('player_joined');
+      } else if (count < 2 && this.hasOpponent) {
+         // Opponent left
+         this.hasOpponent = false;
+         this.emit('opponent_left');
+         // Reset gameStarted so re-joining doesn't auto-start mid-air
+         set(ref(db, `rooms/${code}/gameStarted`), false);
       }
     });
 
-    // Listen for Game Start (synced via `gameStarted` flag)
+    // 2. Monitor Game Start
     const gameStartRef = ref(db, `rooms/${code}/gameStarted`);
     const unsubStart = onValue(gameStartRef, (snapshot) => {
       if (snapshot.val() === true) {
@@ -146,63 +178,24 @@ export class Network extends EventEmitter {
       }
     });
     
-    // Listen for State Updates
-    // We only care about the OTHER player's state
-    const unsubState = onValue(playersRef, (snapshot) => {
-      const players = snapshot.val();
-      if (!players) return;
-      
-      Object.keys(players).forEach(pid => {
-        if (pid !== this.id) {
-          // This is the opponent
-          if (players[pid].state) {
-            this.emit('opponent_state', players[pid].state);
-          }
-           // Check if they are gone? (onValue handles updates, but if key removed...)
-        }
-      });
-    });
-
-    // Listen for REMOVAL (Disconnect)
-    // onValue above handles modifications. We need to detect if a key was removed.
-    // Actually simpler: if players count drops < 2 AND we had 2 before.
-    // Let's use child_removed event if we wanted precision, but onValue is fine.
-    
-    // Simplified Disconnect Detection logic inside the onValue above is tricky because
-    // snapshot only has CURRENT data.
-    // We can use child_removed on playersRef
-    // But honestly, for this specific use case, let's just use `onDisconnect` logic to remove ourselves,
-    // and rely on `onValue` of players to see if opponent is missing.
-    
-    this.refs['players'] = playersRef; // save for cleanup? (Actually standard Firebase returns unsubscribe function)
-    this.roomUnsubscribes = [unsubPlayers, unsubStart, unsubState];
+    this.roomUnsubscribes = [unsubPlayers, unsubStart];
   }
 
   setupDisconnectHandler(code) {
-    // If I disconnect, remove me from players
     const myPlayerRef = ref(db, `rooms/${code}/players/${this.id}`);
-    onDisconnect(myPlayerRef).remove();
+    onDisconnect(myPlayerRef).remove(); // Auto remove on connection loss
+    
+    // Also remove me if I manually disconnect (handled in cleanupRoom)
   }
 
-  // Send my game state
   updateState(data) {
     if (!this.roomCode || !this.id) return;
-    // Debounce or just set? for 60fps game, 'set' every frame is too much.
-    // Tetris is slower, maybe every move.
-    
-    // We write to rooms/CODE/players/MY_ID/state
     const stateRef = ref(db, `rooms/${this.roomCode}/players/${this.id}/state`);
-    set(stateRef, data); // set is fine for tetris frequency
+    set(stateRef, data);
   }
-
-  // Cleanup
-  disconnect() {
-    if (this.roomUnsubscribes) {
-      this.roomUnsubscribes.forEach(unsub => unsub());
-    }
-    // Remove self from room explicitly if quitting
-    if (this.roomCode && this.id) {
-       remove(ref(db, `rooms/${this.roomCode}/players/${this.id}`));
-    }
+  
+  // Explicit "Home" action
+  leaveRoom() {
+    this.cleanupRoom();
   }
 }

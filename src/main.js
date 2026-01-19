@@ -76,6 +76,7 @@ document.addEventListener('DOMContentLoaded', () => {
     addTapListener('btn-home', (e) => {
         e.stopPropagation();
         if (game) game.destroy();
+        if (network) network.leaveRoom(); // Cleanly leave the room
         showMenu();
         // Reset multiplayer menu state
         multiMenu.classList.add('hidden');

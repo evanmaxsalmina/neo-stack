@@ -198,9 +198,9 @@ export class Game {
     this.renderer.drawNext(this.nextPiece);
     this.renderer.drawHold(this.holdPiece);
     
-    // Throttle network updates (every 500ms) to prevent flooding
+    // Throttle network updates (every 100ms) to prevent flooding
     const now = Date.now();
-    if (!this.lastEmitTime || now - this.lastEmitTime > 500) {
+    if (!this.lastEmitTime || now - this.lastEmitTime > 100) {
        this.emitState();
        this.lastEmitTime = now;
     }
