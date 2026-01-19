@@ -198,7 +198,12 @@ export class Game {
     this.renderer.drawNext(this.nextPiece);
     this.renderer.drawHold(this.holdPiece);
     
-    this.emitState();
+    // Throttle network updates (every 500ms) to prevent flooding
+    const now = Date.now();
+    if (!this.lastEmitTime || now - this.lastEmitTime > 500) {
+       this.emitState();
+       this.lastEmitTime = now;
+    }
   }
 
   getGhostY() {
