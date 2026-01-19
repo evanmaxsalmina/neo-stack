@@ -34,25 +34,23 @@ class EventEmitter {
 export class Network extends EventEmitter {
   constructor() {
     super();
-    this.id = null;
+    // Generate a unique ID for this session to allow same-browser testing
+    this.id = 'player_' + Math.random().toString(36).substr(2, 9);
     this.roomCode = null;
-    this.refs = {}; // Store firebase refs to turn off later
+    this.refs = {}; 
     
-    // Auto sign-in
+    // We still auth anonymously to access DB, but we won't use uid as player key
     onAuthStateChanged(auth, (user) => {
       if (user) {
-        this.id = user.uid;
+        // Connected to Firebase
         this.emit('connect');
-        console.log('Connected to Firebase as:', this.id);
+        console.log('Connected with Session ID:', this.id);
       } else {
         signInAnonymously(auth).catch((error) => {
           console.error("Auth error", error);
-          this.emit('error', "Authentication Failed");
         });
       }
     });
-
-    // Handle visibility logging (optional, simpler to rely on onDisconnect)
   }
 
   // Generate random 4 digit code
