@@ -7,5 +7,6 @@ export const firebaseConfig = {
   storageBucket: "neo-stack-gg.firebasestorage.app",
   messagingSenderId: "499946003147",
   appId: "1:499946003147:web:c011dc4d73fb80f360194e",
-  measurementId: "G-KFHZT6RCLL"
+  measurementId: "G-KFHZT6RCLL",
+  databaseURL: "https://neo-stack-gg-default-rtdb.asia-southeast1.firebasedatabase.app/"
 };
