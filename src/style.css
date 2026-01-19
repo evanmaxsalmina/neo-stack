@@ -387,12 +387,15 @@ canvas {
   }
 
   /* Opponent on mobile: Small floating window */
+  /* Show opponent on mobile, positioned absolute LEFT */
   .side-panel.opponent {
     display: flex;
     position: absolute;
-    top: 60px;
-    right: 10px;
-    left: auto;
+    top: 150px;
+    /* Below Hold/Score */
+    left: 10px;
+    /* Aligned LEFT */
+    right: auto;
     width: auto;
     z-index: 4;
     opacity: 0.9;
